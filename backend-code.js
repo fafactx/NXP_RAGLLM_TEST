@@ -10,7 +10,7 @@ const fs = require('fs');
 
 // 创建Express应用
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3333;
 
 // 中间件
 app.use(cors());
@@ -61,16 +61,16 @@ app.post('/api/save-evaluation', (req, res) => {
     try {
         const evaluationData = req.body;
         console.log('接收到评估数据:', JSON.stringify(evaluationData).substring(0, 200) + '...');
-        
+
         let savedCount = 0;
         const results = [];
-        
+
         // 遍历所有评估结果
         for (const key in evaluationData) {
             if (key.startsWith('result')) {
                 const result = evaluationData[key];
                 console.log(`处理结果: ${key}`);
-                
+
                 // 准备SQL语句
                 const sql = `
                     INSERT INTO evaluation_results (
@@ -80,7 +80,7 @@ app.post('/api/save-evaluation', (req, res) => {
                         professionalism, usefulness, average_score, summary, llm_answer
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `;
-                
+
                 // 准备数据
                 const params = [
                     result['CAS Name'] || '',
@@ -103,7 +103,7 @@ app.post('/api/save-evaluation', (req, res) => {
                     result['summary'] || '',
                     result['LLM_ANSWER'] || ''
                 ];
-                
+
                 // 执行插入操作
                 db.run(sql, params, function(err) {
                     if (err) {
@@ -116,11 +116,11 @@ app.post('/api/save-evaluation', (req, res) => {
                         });
                     }
                 });
-                
+
                 savedCount++;
             }
         }
-        
+
         // 返回成功响应
         res.json({
             success: true,
@@ -148,7 +148,7 @@ app.get('/api/evaluations', (req, res) => {
             });
             return;
         }
-        
+
         res.json({
             success: true,
             data: rows
@@ -159,15 +159,15 @@ app.get('/api/evaluations', (req, res) => {
 // 获取MAG分数统计
 app.get('/api/mag-scores', (req, res) => {
     db.all(`
-        SELECT 
-            mag, 
+        SELECT
+            mag,
             AVG(hallucination_control) as avg_hallucination_control,
             AVG(quality) as avg_quality,
             AVG(professionalism) as avg_professionalism,
             AVG(usefulness) as avg_usefulness,
             AVG(average_score) as avg_score,
             COUNT(*) as count
-        FROM evaluation_results 
+        FROM evaluation_results
         GROUP BY mag
         ORDER BY avg_score DESC
     `, [], (err, rows) => {
@@ -179,7 +179,7 @@ app.get('/api/mag-scores', (req, res) => {
             });
             return;
         }
-        
+
         res.json({
             success: true,
             data: rows
@@ -190,7 +190,7 @@ app.get('/api/mag-scores', (req, res) => {
 // 获取维度分数统计
 app.get('/api/dimension-scores', (req, res) => {
     db.all(`
-        SELECT 
+        SELECT
             AVG(hallucination_control) as hallucination_control,
             AVG(quality) as quality,
             AVG(professionalism) as professionalism,
@@ -207,7 +207,7 @@ app.get('/api/dimension-scores', (req, res) => {
             });
             return;
         }
-        
+
         if (rows.length > 0) {
             const dimensions = [
                 { name: 'Hallucination Control', score: rows[0].hallucination_control },
@@ -215,7 +215,7 @@ app.get('/api/dimension-scores', (req, res) => {
                 { name: 'Professionalism', score: rows[0].professionalism },
                 { name: 'Usefulness', score: rows[0].usefulness }
             ];
-            
+
             res.json({
                 success: true,
                 data: dimensions,
@@ -234,6 +234,6 @@ app.get('/api/dimension-scores', (req, res) => {
 });
 
 // 启动服务器
-app.listen(port, () => {
-    console.log(`评估后端服务运行在 http://localhost:${port}`);
+app.listen(port, '10.193.21.115', () => {
+    console.log(`评估后端服务运行在 http://10.193.21.115:${port}`);
 });
