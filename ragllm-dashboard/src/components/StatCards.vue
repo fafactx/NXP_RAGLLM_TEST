@@ -26,7 +26,7 @@
         <div class="stat-value">{{ passRate }}%</div>
         <div class="stat-change">
           <span v-if="error" class="error-text">{{ error }}</span>
-          <span v-else>{{ $t('dashboard.threshold') }}: 70%</span>
+          <span v-else>{{ $t('dashboard.threshold') }}: {{ passingThreshold }}%</span>
         </div>
       </a-card>
     </a-col>
@@ -85,6 +85,7 @@ const passRate = ref(0);
 const averageScore = ref(0);
 const latestTestDate = ref('--');
 const latestTestTime = ref('--');
+const passingThreshold = ref(70); // 默认及格线为70
 
 // 获取统计数据
 const fetchStats = async () => {
@@ -101,8 +102,8 @@ const fetchStats = async () => {
       // 计算总测试数
       totalTests.value = evaluations.length;
 
-      // 计算通过率（分数>=70的百分比）
-      const passingTests = evaluations.filter(e => e.average_score >= 70).length;
+      // 计算通过率（分数>=及格线的百分比）
+      const passingTests = evaluations.filter(e => e.average_score >= passingThreshold.value).length;
       passRate.value = totalTests.value > 0 ? Math.round((passingTests / totalTests.value) * 100) : 0;
 
       // 获取最新测试日期
@@ -144,8 +145,18 @@ const useExampleData = () => {
   latestTestTime.value = '3 hours ago';
 };
 
+// 从localStorage读取及格线设置
+const loadPassingThreshold = () => {
+  const savedThreshold = localStorage.getItem('passingScore');
+  if (savedThreshold) {
+    passingThreshold.value = parseInt(savedThreshold, 10);
+    console.log('从localStorage加载及格线:', passingThreshold.value);
+  }
+};
+
 // 在组件挂载时获取数据
 onMounted(() => {
+  loadPassingThreshold(); // 先加载及格线设置
   fetchStats();
 });
 </script>
