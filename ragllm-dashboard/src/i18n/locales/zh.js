@@ -34,7 +34,9 @@ export default {
   },
   testCases: {
     recentTests: '最近测试结果',
+    allTests: '所有测试结果',
     viewAll: '查看全部',
+    viewRecent: '查看最近',
     testId: '测试ID',
     testName: '测试名称',
     date: '日期',

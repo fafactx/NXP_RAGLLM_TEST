@@ -4,10 +4,13 @@
 
     <div class="recent-tests-table">
       <div class="table-header">
-        <h3>{{ $t('testCases.recentTests') }}</h3>
-        <a-button type="primary" shape="round">
-          <template #icon><right-outlined /></template>
-          {{ $t('testCases.viewAll') }}
+        <h3>{{ showAllTests ? $t('testCases.allTests') : $t('testCases.recentTests') }}</h3>
+        <a-button type="primary" shape="round" @click="toggleViewAll">
+          <template #icon>
+            <right-outlined v-if="!showAllTests" />
+            <left-outlined v-else />
+          </template>
+          {{ showAllTests ? $t('testCases.viewRecent') : $t('testCases.viewAll') }}
         </a-button>
       </div>
       <div v-if="error" class="error-message">
@@ -16,7 +19,12 @@
       <a-table
         :columns="columns"
         :data-source="data"
-        :pagination="{ pageSize: 10 }"
+        :pagination="{
+          pageSize: showAllTests ? 20 : 10,
+          showSizeChanger: showAllTests,
+          pageSizeOptions: ['10', '20', '50', '100'],
+          showTotal: (total) => `共 ${total} 条记录`
+        }"
         :row-class-name="(_record, index) => (index % 2 === 1 ? 'table-striped' : '')"
         :loading="loading"
       />
@@ -93,7 +101,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { RightOutlined } from '@ant-design/icons-vue';
+import { RightOutlined, LeftOutlined } from '@ant-design/icons-vue';
 import { h } from 'vue';
 import { Tag as ATag } from 'ant-design-vue';
 import { getTestCases } from '../api/testcases';
@@ -167,6 +175,17 @@ const columns = computed(() => [
 // 查看详情对话框
 const detailsVisible = ref(false);
 const currentDetails = ref(null);
+const passingThreshold = ref(70); // 默认及格线为70
+const showAllTests = ref(false); // 控制是否显示所有测试用例
+
+// 从localStorage读取及格线设置
+const loadPassingThreshold = () => {
+  const savedThreshold = localStorage.getItem('passingScore');
+  if (savedThreshold) {
+    passingThreshold.value = parseInt(savedThreshold, 10);
+    console.log('从localStorage加载及格线:', passingThreshold.value);
+  }
+};
 
 // 查看详情函数
 const viewDetails = (record) => {
@@ -179,6 +198,11 @@ const closeDetails = () => {
   detailsVisible.value = false;
 };
 
+// 切换显示所有测试用例
+const toggleViewAll = () => {
+  showAllTests.value = !showAllTests.value;
+};
+
 // 获取测试用例数据
 const fetchTestCases = async () => {
   try {
@@ -189,11 +213,11 @@ const fetchTestCases = async () => {
     if (response.success && response.data) {
       // 转换API返回的数据格式为表格所需格式
       testCases.value = response.data.map((item, index) => {
-        // 根据分数确定状态
+        // 根据分数和及格线确定状态
         let status = 'success';
-        if (item.average_score < 70) {
+        if (item.average_score < passingThreshold.value) {
           status = 'failure';
-        } else if (item.average_score < 80) {
+        } else if (item.average_score < passingThreshold.value + 10) {
           status = 'partial_success';
         }
 
@@ -227,6 +251,18 @@ const fetchTestCases = async () => {
 
 // 使用示例数据
 const useExampleData = () => {
+  // 根据及格线确定状态
+  const getStatus = (score) => {
+    const numScore = parseInt(score, 10);
+    if (numScore < passingThreshold.value) {
+      return 'failure';
+    } else if (numScore < passingThreshold.value + 10) {
+      return 'partial_success';
+    } else {
+      return 'success';
+    }
+  };
+
   testCases.value = [
     {
       key: '1',
@@ -234,7 +270,7 @@ const useExampleData = () => {
       question: 'Why can\'t TJA1145 enter sleep mode?',
       date: '2023-05-18',
       score: '67',
-      status: 'failure',
+      status: getStatus('67'),
       raw_data: {
         id: 1,
         cas_name: 'mia.zhang_1@nxp.com',
@@ -265,7 +301,7 @@ const useExampleData = () => {
       question: 'Under what conditions will NXP\'s TJA1145 enter sleep mode?',
       date: '2023-05-18',
       score: '65',
-      status: 'failure',
+      status: getStatus('65'),
       raw_data: {
         id: 2,
         cas_name: 'john.doe@nxp.com',
@@ -295,11 +331,15 @@ const useExampleData = () => {
 
 // 在组件挂载时获取数据
 onMounted(() => {
+  loadPassingThreshold(); // 先加载及格线设置
   fetchTestCases();
 });
 
 // 表格数据（使用计算属性，以便在testCases变化时自动更新）
-const data = computed(() => testCases.value);
+const data = computed(() => {
+  // 如果showAllTests为true，显示所有测试用例，否则只显示最近的10个
+  return showAllTests.value ? testCases.value : testCases.value.slice(0, 10);
+});
 </script>
 
 <style scoped>

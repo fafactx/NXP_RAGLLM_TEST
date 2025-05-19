@@ -34,7 +34,9 @@ export default {
   },
   testCases: {
     recentTests: 'Recent Test Results',
+    allTests: 'All Test Results',
     viewAll: 'View All',
+    viewRecent: 'View Recent',
     testId: 'Test ID',
     testName: 'Test Name',
     date: 'Date',
