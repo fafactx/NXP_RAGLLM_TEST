@@ -1,7 +1,13 @@
 <template>
   <div class="chart-container">
     <h3>MAG Score</h3>
-    <v-chart class="chart" :option="option" autoresize />
+    <div v-if="loading" class="loading-container">
+      <a-spin />
+    </div>
+    <div v-else-if="error" class="error-container">
+      <a-alert type="error" :message="error" />
+    </div>
+    <v-chart v-else class="chart" :option="option" autoresize />
   </div>
 </template>
 
@@ -11,8 +17,9 @@ import { CanvasRenderer } from 'echarts/renderers';
 import { BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import VChart from 'vue-echarts';
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getMagScores } from '../api/evaluations';
 
 const { t } = useI18n();
 
@@ -26,41 +33,69 @@ use([
   LegendComponent
 ]);
 
-// Sample MAG data
-const magData = [
-  { mag: 'RAN', score: 92, percentage: 10.80 },
-  { mag: 'RA1', score: 88, percentage: 8.64 },
-  { mag: 'R16', score: 85, percentage: 8.33 },
-  { mag: 'RMP', score: 83, percentage: 7.72 },
-  { mag: 'RPM', score: 80, percentage: 6.17 },
-  { mag: 'RC7', score: 78, percentage: 4.94 },
-  { mag: 'RC8', score: 76, percentage: 4.63 },
-  { mag: 'RAS', score: 75, percentage: 4.63 },
-  { mag: 'RSE', score: 74, percentage: 4.63 },
-  { mag: 'RAU', score: 72, percentage: 4.01 },
-  { mag: 'RMC', score: 70, percentage: 3.09 },
-  { mag: 'RE8', score: 68, percentage: 3.09 },
-  { mag: 'RG8', score: 67, percentage: 3.09 },
-  { mag: 'RST', score: 64, percentage: 2.16 },
-  { mag: 'R01', score: 62, percentage: 1.85 },
-  { mag: 'RMB', score: 60, percentage: 1.85 },
-  { mag: 'RK7', score: 58, percentage: 1.54 },
-  { mag: 'RGP', score: 57, percentage: 1.54 },
-  { mag: 'RB7', score: 55, percentage: 1.54 },
-  { mag: 'RCS', score: 54, percentage: 1.54 },
-  { mag: 'RNG', score: 52, percentage: 0.93 },
-  { mag: 'RMU', score: 50, percentage: 0.31 }
-];
+// 状态变量
+const loading = ref(true);
+const error = ref(null);
+const magData = ref([]);
 
-// Sort data by percentage (descending)
-const sortedData = [...magData].sort((a, b) => b.percentage - a.percentage);
+// 获取MAG分数数据
+const fetchMagScores = async () => {
+  try {
+    loading.value = true;
+    error.value = null;
+    const response = await getMagScores();
 
-// Prepare data for chart
-const magNames = sortedData.map(item => item.mag);
-const magScores = sortedData.map(item => item.score);
-// 使用分数而不是百分比
-const normalizedScores = sortedData.map(item => item.score);
-const remainingScores = sortedData.map(item => 100 - item.score);
+    if (response.success && response.data) {
+      // 转换API返回的数据格式
+      magData.value = response.data.map(item => ({
+        mag: item.mag || 'Unknown',
+        score: Math.round(item.avg_score) || 0,
+        hallucination_control: Math.round(item.avg_hallucination_control) || 0,
+        quality: Math.round(item.avg_quality) || 0,
+        professionalism: Math.round(item.avg_professionalism) || 0,
+        usefulness: Math.round(item.avg_usefulness) || 0,
+        count: item.count || 0
+      }));
+    } else {
+      // 如果没有数据，使用示例数据
+      magData.value = getSampleData();
+    }
+  } catch (err) {
+    console.error('获取MAG分数失败:', err);
+    error.value = '获取数据失败，请稍后再试';
+    // 使用示例数据作为后备
+    magData.value = getSampleData();
+  } finally {
+    loading.value = false;
+  }
+};
+
+// 示例数据函数
+const getSampleData = () => {
+  return [
+    { mag: 'RAN', score: 92, count: 10 },
+    { mag: 'RA1', score: 88, count: 8 },
+    { mag: 'R16', score: 85, count: 8 },
+    { mag: 'RMP', score: 83, count: 7 },
+    { mag: 'RPM', score: 80, count: 6 }
+  ];
+};
+
+// 在组件挂载时获取数据
+onMounted(() => {
+  fetchMagScores();
+});
+
+// 计算排序后的数据
+const sortedData = computed(() => {
+  return [...magData.value].sort((a, b) => b.score - a.score);
+});
+
+// 准备图表数据
+const magNames = computed(() => sortedData.value.map(item => item.mag));
+const magScores = computed(() => sortedData.value.map(item => item.score));
+const normalizedScores = computed(() => sortedData.value.map(item => item.score));
+const remainingScores = computed(() => sortedData.value.map(item => 100 - item.score));
 
 // Chart options
 const option = computed(() => ({
@@ -71,11 +106,22 @@ const option = computed(() => ({
     },
     formatter: function(params) {
       const dataIndex = params[0].dataIndex;
-      const mag = magNames[dataIndex];
-      const score = magScores[dataIndex];
+      const mag = magNames.value[dataIndex];
+      const score = magScores.value[dataIndex];
+      const item = sortedData.value[dataIndex];
 
-      return `<strong>${mag}</strong><br/>
-              Score: ${score}`;
+      let tooltipContent = `<strong>${mag}</strong><br/>Score: ${score}`;
+
+      // 如果有详细维度分数，显示它们
+      if (item) {
+        if (item.hallucination_control) tooltipContent += `<br/>Hallucination Control: ${item.hallucination_control}`;
+        if (item.quality) tooltipContent += `<br/>Quality: ${item.quality}`;
+        if (item.professionalism) tooltipContent += `<br/>Professionalism: ${item.professionalism}`;
+        if (item.usefulness) tooltipContent += `<br/>Usefulness: ${item.usefulness}`;
+        if (item.count) tooltipContent += `<br/>Sample Count: ${item.count}`;
+      }
+
+      return tooltipContent;
     }
   },
   legend: {
@@ -91,7 +137,7 @@ const option = computed(() => ({
   },
   xAxis: {
     type: 'category',
-    data: magNames.slice(0, 10), // 只显示前10个MAG，避免图表过于拥挤
+    data: magNames.value.slice(0, 10), // 只显示前10个MAG，避免图表过于拥挤
     axisLine: {
       lineStyle: {
         color: '#e0e0e0'
@@ -131,7 +177,7 @@ const option = computed(() => ({
         position: 'inside',
         formatter: function(params) {
           const index = params.dataIndex;
-          return magScores[index];
+          return magScores.value[index];
         },
         fontSize: 12,
         color: '#fff',
@@ -164,7 +210,7 @@ const option = computed(() => ({
         },
         borderRadius: [4, 4, 0, 0]
       },
-      data: normalizedScores.slice(0, 10)
+      data: normalizedScores.value.slice(0, 10)
     },
     {
       name: 'Remaining',
@@ -177,13 +223,23 @@ const option = computed(() => ({
         color: '#f5f5f5',
         borderRadius: [0, 0, 4, 4]
       },
-      data: remainingScores.slice(0, 10)
+      data: remainingScores.value.slice(0, 10)
     }
   ]
 }));
 </script>
 
 <style scoped>
+.chart-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: #fff;
+  border-radius: 4px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
 .chart {
   flex: 1;
   min-height: 0;
@@ -196,5 +252,17 @@ const option = computed(() => ({
   font-weight: 500;
   margin-bottom: 16px;
   color: #333;
+}
+
+.loading-container, .error-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  flex: 1;
+}
+
+.error-container {
+  padding: 20px;
 }
 </style>

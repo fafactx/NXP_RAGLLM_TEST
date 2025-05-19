@@ -12,9 +12,14 @@ export default {
   dashboard: {
     totalTest: '测试总数',
     successRate: '成功率',
+    passRate: '通过率',
     averageScore: '平均分数',
     latestTest: '最新测试',
     increase: '增加',
+    decrease: '减少',
+    samples: '个样本',
+    threshold: '阈值',
+    outOf100: '满分100',
     performanceTrend: '最近7天性能评分趋势',
     date: '日期',
     score: '评分',
@@ -24,7 +29,8 @@ export default {
     quality: '质量',
     professionalism: '专业性',
     usefulness: '实用性',
-    filtered: '已筛选'
+    filtered: '已筛选',
+    noData: '暂无数据'
   },
   testCases: {
     recentTests: '最近测试结果',

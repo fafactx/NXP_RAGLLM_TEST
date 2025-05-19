@@ -12,9 +12,14 @@ export default {
   dashboard: {
     totalTest: 'Total Test',
     successRate: 'Success Rate',
+    passRate: 'Pass Rate',
     averageScore: 'Average Score',
     latestTest: 'Latest Test',
     increase: 'increase',
+    decrease: 'decrease',
+    samples: 'samples',
+    threshold: 'Threshold',
+    outOf100: 'out of 100',
     performanceTrend: 'Performance Trend Last 7 Days',
     date: 'Date',
     score: 'Score',
@@ -24,7 +29,8 @@ export default {
     quality: 'Quality',
     professionalism: 'Professionalism',
     usefulness: 'Usefulness',
-    filtered: 'Filtered'
+    filtered: 'Filtered',
+    noData: 'No data available'
   },
   testCases: {
     recentTests: 'Recent Test Results',
