@@ -59,8 +59,24 @@ db.serialize(() => {
 // API路由
 app.post('/api/save-evaluation', (req, res) => {
     try {
-        const evaluationData = req.body;
-        console.log('接收到评估数据:', JSON.stringify(evaluationData).substring(0, 200) + '...');
+        // 获取原始请求数据
+        const rawData = req.body;
+        console.log('接收到原始数据:', JSON.stringify(rawData).substring(0, 200) + '...');
+
+        // 处理数据格式
+        let evaluationData;
+
+        // 检查是否是Dify的新格式 {"arg1": {"result0": {...}, "result1": {...}}}
+        if (rawData && typeof rawData === 'object' && rawData.arg1) {
+            console.log('检测到Dify新格式数据，提取arg1字段');
+            evaluationData = rawData.arg1;
+        } else {
+            // 旧格式：直接使用原始数据 {"result0": {...}, "result1": {...}}
+            console.log('使用旧格式数据');
+            evaluationData = rawData;
+        }
+
+        console.log('处理后的评估数据:', JSON.stringify(evaluationData).substring(0, 200) + '...');
 
         let savedCount = 0;
         const results = [];
