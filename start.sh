@@ -42,15 +42,65 @@ check_nodejs() {
         log_error "Node.js未安装! 请安装Node.js后再运行此脚本。"
         exit 1
     fi
-    
+
     log_info "Node.js版本: $(node -v)"
     log_info "NPM版本: $(npm -v)"
+}
+
+# 检查端口是否被占用
+check_port() {
+    local port=$1
+    local address=$2
+
+    # 如果没有指定地址，则使用0.0.0.0（所有地址）
+    if [ -z "$address" ]; then
+        address="0.0.0.0"
+    fi
+
+    # 检查端口是否被占用
+    if netstat -tuln | grep -q "$address:$port"; then
+        return 0 # 端口被占用
+    else
+        return 1 # 端口未被占用
+    fi
+}
+
+# 杀死占用端口的进程
+kill_process_on_port() {
+    local port=$1
+    local address=$2
+
+    # 如果没有指定地址，则使用0.0.0.0（所有地址）
+    if [ -z "$address" ]; then
+        address="0.0.0.0"
+    fi
+
+    log_warning "端口 $address:$port 已被占用，尝试杀死占用进程..."
+
+    # 查找占用端口的进程PID
+    local pid=$(lsof -i tcp:$port -t 2>/dev/null)
+
+    if [ -z "$pid" ]; then
+        log_error "无法找到占用端口 $port 的进程!"
+        return 1
+    fi
+
+    # 杀死进程
+    kill -9 $pid 2>/dev/null
+
+    if [ $? -eq 0 ]; then
+        log_success "成功杀死占用端口 $port 的进程 (PID: $pid)"
+        return 0
+    else
+        log_error "无法杀死占用端口 $port 的进程 (PID: $pid)"
+        return 1
+    fi
 }
 
 # 检查依赖是否安装
 check_dependencies() {
     local dir=$1
-    
+
     if [ ! -d "$dir/node_modules" ]; then
         log_warning "依赖未安装，正在安装..."
         cd "$dir" && npm install
@@ -67,17 +117,34 @@ check_dependencies() {
 # 启动后端
 start_backend() {
     log_info "正在启动后端服务..."
-    
+
     # 检查后端目录
     check_directory "$BASE_DIR"
-    
+
     # 检查后端依赖
     check_dependencies "$BASE_DIR"
-    
+
+    # 检查后端端口是否被占用
+    if check_port $BACKEND_PORT $BACKEND_HOST; then
+        log_warning "后端端口 $BACKEND_HOST:$BACKEND_PORT 已被占用!"
+
+        # 询问用户是否杀死占用进程
+        read -p "是否杀死占用端口的进程? (y/n): " answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            if ! kill_process_on_port $BACKEND_PORT $BACKEND_HOST; then
+                log_error "无法释放端口 $BACKEND_HOST:$BACKEND_PORT，请手动关闭占用该端口的进程后重试。"
+                exit 1
+            fi
+        else
+            log_error "端口 $BACKEND_HOST:$BACKEND_PORT 被占用，无法启动后端服务。"
+            exit 1
+        fi
+    fi
+
     # 启动后端服务
     cd "$BASE_DIR" && node backend-code.js &
     BACKEND_PID=$!
-    
+
     # 检查后端是否成功启动
     sleep 3
     if ps -p $BACKEND_PID > /dev/null; then
@@ -91,17 +158,34 @@ start_backend() {
 # 启动前端
 start_frontend() {
     log_info "正在启动前端服务..."
-    
+
     # 检查前端目录
     check_directory "$FRONTEND_DIR"
-    
+
     # 检查前端依赖
     check_dependencies "$FRONTEND_DIR"
-    
+
+    # 检查前端端口是否被占用
+    if check_port $FRONTEND_PORT $FRONTEND_HOST; then
+        log_warning "前端端口 $FRONTEND_HOST:$FRONTEND_PORT 已被占用!"
+
+        # 询问用户是否杀死占用进程
+        read -p "是否杀死占用端口的进程? (y/n): " answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            if ! kill_process_on_port $FRONTEND_PORT $FRONTEND_HOST; then
+                log_error "无法释放端口 $FRONTEND_HOST:$FRONTEND_PORT，请手动关闭占用该端口的进程后重试。"
+                exit 1
+            fi
+        else
+            log_error "端口 $FRONTEND_HOST:$FRONTEND_PORT 被占用，无法启动前端服务。"
+            exit 1
+        fi
+    fi
+
     # 启动前端服务
     cd "$FRONTEND_DIR" && npm run dev &
     FRONTEND_PID=$!
-    
+
     # 检查前端是否成功启动
     sleep 5
     if ps -p $FRONTEND_PID > /dev/null; then
@@ -115,27 +199,27 @@ start_frontend() {
 # 显示访问信息
 show_access_info() {
     log_info "服务已启动!"
-    log_info "后端API地址: http://10.193.21.115:3333"
-    log_info "前端访问地址: http://10.193.21.115:3000"
+    log_info "后端API地址: http://$BACKEND_HOST:$BACKEND_PORT"
+    log_info "前端访问地址: http://$FRONTEND_HOST:$FRONTEND_PORT"
     log_info "按 Ctrl+C 停止服务"
 }
 
 # 清理函数
 cleanup() {
     log_info "正在停止服务..."
-    
+
     # 停止前端服务
     if [ ! -z "$FRONTEND_PID" ]; then
         kill $FRONTEND_PID 2>/dev/null
         log_success "前端服务已停止"
     fi
-    
+
     # 停止后端服务
     if [ ! -z "$BACKEND_PID" ]; then
         kill $BACKEND_PID 2>/dev/null
         log_success "后端服务已停止"
     fi
-    
+
     log_success "所有服务已停止"
     exit 0
 }
@@ -146,19 +230,19 @@ trap cleanup SIGINT SIGTERM
 # 主函数
 main() {
     log_info "正在启动RAGLLM测试套件..."
-    
+
     # 检查Node.js
     check_nodejs
-    
+
     # 启动后端
     start_backend
-    
+
     # 启动前端
     start_frontend
-    
+
     # 显示访问信息
     show_access_info
-    
+
     # 保持脚本运行
     wait
 }
@@ -166,6 +250,12 @@ main() {
 # 设置目录路径
 BASE_DIR="/home/ken/NXP_RAGLLM_TEST"
 FRONTEND_DIR="$BASE_DIR/ragllm-dashboard"
+
+# 设置端口和主机
+BACKEND_HOST="10.193.21.115"
+BACKEND_PORT="3333"
+FRONTEND_HOST="10.193.21.115"
+FRONTEND_PORT="3000"
 
 # 执行主函数
 main
