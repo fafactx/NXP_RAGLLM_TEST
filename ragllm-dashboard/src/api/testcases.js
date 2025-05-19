@@ -29,3 +29,20 @@ export const getTestCaseDetails = async (id) => {
     throw error;
   }
 };
+
+/**
+ * 删除测试用例
+ * @param {Array<number>} ids 要删除的测试用例ID数组
+ * @returns {Promise} 包含删除结果的Promise
+ */
+export const deleteTestCasesAPI = async (ids) => {
+  try {
+    const response = await apiClient.delete('/api/evaluations', {
+      data: { ids }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('删除测试用例失败:', error);
+    throw error;
+  }
+};

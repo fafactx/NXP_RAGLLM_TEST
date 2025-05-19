@@ -5,13 +5,40 @@
     <div class="recent-tests-table">
       <div class="table-header">
         <h3>{{ showAllTests ? $t('testCases.allTests') : $t('testCases.recentTests') }}</h3>
-        <a-button type="primary" shape="round" @click="toggleViewAll">
-          <template #icon>
-            <right-outlined v-if="!showAllTests" />
-            <left-outlined v-else />
-          </template>
-          {{ showAllTests ? $t('testCases.viewRecent') : $t('testCases.viewAll') }}
-        </a-button>
+        <div class="table-actions">
+          <a-button-group style="margin-right: 8px;">
+            <a-button
+              type="primary"
+              :disabled="selectedRowKeys.length === 0"
+              @click="exportToExcel"
+            >
+              <template #icon><file-excel-outlined /></template>
+              {{ $t('testCases.exportExcel') }}
+            </a-button>
+            <a-button
+              :disabled="selectedRowKeys.length === 0"
+              @click="exportToPDF"
+            >
+              <template #icon><file-pdf-outlined /></template>
+              {{ $t('testCases.exportPDF') }}
+            </a-button>
+            <a-button
+              danger
+              :disabled="selectedRowKeys.length === 0"
+              @click="deleteTestCases"
+            >
+              <template #icon><delete-outlined /></template>
+              {{ $t('testCases.delete') }}
+            </a-button>
+          </a-button-group>
+          <a-button type="primary" shape="round" @click="toggleViewAll">
+            <template #icon>
+              <right-outlined v-if="!showAllTests" />
+              <left-outlined v-else />
+            </template>
+            {{ showAllTests ? $t('testCases.viewRecent') : $t('testCases.viewAll') }}
+          </a-button>
+        </div>
       </div>
       <div v-if="error" class="error-message">
         <a-alert type="error" :message="error" show-icon />
@@ -27,7 +54,24 @@
         }"
         :row-class-name="(_record, index) => (index % 2 === 1 ? 'table-striped' : '')"
         :loading="loading"
-      />
+        :row-selection="{
+          selectedRowKeys: selectedRowKeys,
+          onChange: onSelectChange,
+          selections: [
+            Table.SELECTION_ALL,
+            Table.SELECTION_INVERT,
+            Table.SELECTION_NONE
+          ]
+        }"
+      >
+        <template #footer>
+          <div class="table-footer">
+            <span v-if="selectedRowKeys.length > 0">
+              {{ $t('testCases.selected', { count: selectedRowKeys.length }) }}
+            </span>
+          </div>
+        </template>
+      </a-table>
     </div>
 
     <!-- 详情对话框 -->
@@ -101,10 +145,16 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { RightOutlined, LeftOutlined } from '@ant-design/icons-vue';
+import {
+  RightOutlined,
+  LeftOutlined,
+  FileExcelOutlined,
+  FilePdfOutlined,
+  DeleteOutlined
+} from '@ant-design/icons-vue';
 import { h } from 'vue';
-import { Tag as ATag } from 'ant-design-vue';
-import { getTestCases } from '../api/testcases';
+import { Tag as ATag, message, Modal, Table } from 'ant-design-vue';
+import { getTestCases, deleteTestCasesAPI } from '../api/testcases';
 
 const { t } = useI18n();
 
@@ -112,6 +162,8 @@ const { t } = useI18n();
 const loading = ref(true);
 const error = ref(null);
 const testCases = ref([]);
+const selectedRowKeys = ref([]); // 选中的行
+const selectedRows = ref([]); // 选中的行数据
 
 // Table columns
 const columns = computed(() => [
@@ -201,6 +253,179 @@ const closeDetails = () => {
 // 切换显示所有测试用例
 const toggleViewAll = () => {
   showAllTests.value = !showAllTests.value;
+};
+
+// 处理行选择变化
+const onSelectChange = (keys, rows) => {
+  selectedRowKeys.value = keys;
+  selectedRows.value = rows;
+};
+
+// 导出为Excel
+const exportToExcel = () => {
+  if (selectedRows.value.length === 0) {
+    // 如果没有选中行，提示用户
+    message.warning(t('testCases.selectRowsToExport'));
+    return;
+  }
+
+  // 显示加载中
+  message.loading(t('testCases.exporting'), 0);
+
+  // 准备导出数据
+  const exportData = selectedRows.value.map(row => {
+    const item = row.raw_data;
+    return {
+      'Test ID': row.id,
+      'CAS Name': item.cas_name,
+      'Product Family': item.product_family,
+      'MAG': item.mag,
+      'Part Number': item.part_number,
+      'Question': item.question,
+      'Answer': item.answer,
+      'Question Scenario': item.question_scenario,
+      'Answer Source': item.answer_source,
+      'Question Complexity': item.question_complexity,
+      'Question Frequency': item.question_frequency,
+      'Question Category': item.question_category,
+      'Source Category': item.source_category,
+      'Hallucination Control': item.hallucination_control,
+      'Quality': item.quality,
+      'Professionalism': item.professionalism,
+      'Usefulness': item.usefulness,
+      'Average Score': item.average_score,
+      'Date': row.date
+    };
+  });
+
+  // 使用xlsx库导出Excel
+  import('xlsx').then(XLSX => {
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Test Cases');
+
+    // 生成Excel文件并下载
+    XLSX.writeFile(workbook, 'test_cases_export.xlsx');
+
+    // 关闭加载提示，显示成功提示
+    message.destroy();
+    message.success(t('testCases.exportSuccess'));
+  }).catch(error => {
+    console.error('导出Excel失败:', error);
+    message.destroy();
+    message.error(t('testCases.exportFailed'));
+  });
+};
+
+// 导出为PDF
+const exportToPDF = () => {
+  if (selectedRows.value.length === 0) {
+    // 如果没有选中行，提示用户
+    message.warning(t('testCases.selectRowsToExport'));
+    return;
+  }
+
+  // 显示加载中
+  message.loading(t('testCases.exporting'), 0);
+
+  // 使用jspdf和jspdf-autotable库导出PDF
+  Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable')
+  ]).then(([{ default: jsPDF }, { default: autoTable }]) => {
+    const doc = new jsPDF();
+
+    // 添加标题
+    doc.setFontSize(16);
+    doc.text('Test Cases Export', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Export Date: ${new Date().toLocaleString()}`, 14, 22);
+
+    // 准备表格数据
+    const tableData = selectedRows.value.map(row => {
+      const item = row.raw_data;
+      return [
+        row.id,
+        item.question,
+        item.average_score,
+        row.date,
+        item.cas_name,
+        item.product_family,
+        item.mag
+      ];
+    });
+
+    // 生成表格
+    autoTable(doc, {
+      startY: 30,
+      head: [['Test ID', 'Question', 'Score', 'Date', 'CAS Name', 'Product Family', 'MAG']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [66, 139, 202] }
+    });
+
+    // 保存PDF文件
+    doc.save('test_cases_export.pdf');
+
+    // 关闭加载提示，显示成功提示
+    message.destroy();
+    message.success(t('testCases.exportSuccess'));
+  }).catch(error => {
+    console.error('导出PDF失败:', error);
+    message.destroy();
+    message.error(t('testCases.exportFailed'));
+  });
+};
+
+// 删除选中的测试用例
+const deleteTestCases = () => {
+  if (selectedRowKeys.value.length === 0) {
+    // 如果没有选中行，提示用户
+    message.warning(t('testCases.selectRowsToDelete'));
+    return;
+  }
+
+  // 显示确认对话框
+  Modal.confirm({
+    title: t('testCases.confirmDelete'),
+    content: t('testCases.deleteConfirmContent', { count: selectedRowKeys.value.length }),
+    okText: t('testCases.delete'),
+    okType: 'danger',
+    cancelText: t('testCases.cancel'),
+    onOk: async () => {
+      try {
+        // 显示加载中
+        message.loading(t('testCases.deleting'), 0);
+
+        // 获取选中行的ID
+        const idsToDelete = selectedRows.value.map(row => row.raw_data.id);
+
+        // 调用删除API
+        const response = await deleteTestCasesAPI(idsToDelete);
+
+        if (response.success) {
+          // 删除成功，刷新数据
+          message.destroy();
+          message.success(t('testCases.deleteSuccess'));
+
+          // 清空选中行
+          selectedRowKeys.value = [];
+          selectedRows.value = [];
+
+          // 重新获取数据
+          fetchTestCases();
+        } else {
+          // 删除失败
+          message.destroy();
+          message.error(response.message || t('testCases.deleteFailed'));
+        }
+      } catch (error) {
+        console.error('删除测试用例失败:', error);
+        message.destroy();
+        message.error(t('testCases.deleteFailed'));
+      }
+    }
+  });
 };
 
 // 获取测试用例数据
@@ -358,6 +583,17 @@ const data = computed(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+}
+
+.table-footer {
+  padding: 8px 0;
+  font-size: 14px;
+  color: #666;
 }
 
 .error-message {

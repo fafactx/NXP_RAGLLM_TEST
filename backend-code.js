@@ -249,6 +249,38 @@ app.get('/api/dimension-scores', (req, res) => {
     });
 });
 
+// 删除评估结果
+app.delete('/api/evaluations', (req, res) => {
+    const ids = req.body.ids;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: '请提供要删除的评估结果ID'
+        });
+    }
+
+    // 构建SQL参数占位符
+    const placeholders = ids.map(() => '?').join(',');
+
+    // 执行删除操作
+    db.run(`DELETE FROM evaluation_results WHERE id IN (${placeholders})`, ids, function(err) {
+        if (err) {
+            console.error('删除评估结果时出错:', err);
+            return res.status(500).json({
+                success: false,
+                message: `删除评估结果时出错: ${err.message}`
+            });
+        }
+
+        res.json({
+            success: true,
+            message: `成功删除了 ${this.changes} 条评估结果`,
+            deleted_count: this.changes
+        });
+    });
+});
+
 // 启动服务器
 app.listen(port, '10.193.21.115', () => {
     console.log(`评估后端服务运行在 http://10.193.21.115:${port}`);

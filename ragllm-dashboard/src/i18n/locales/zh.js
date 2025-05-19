@@ -46,7 +46,22 @@ export default {
     viewDetails: '查看详情',
     success: '成功',
     failure: '失败',
-    partialSuccess: '部分成功'
+    partialSuccess: '部分成功',
+    exportExcel: '导出Excel',
+    exportPDF: '导出PDF',
+    delete: '删除',
+    selected: '已选择 {count} 项',
+    selectRowsToExport: '请选择要导出的行',
+    selectRowsToDelete: '请选择要删除的行',
+    exporting: '导出中...',
+    exportSuccess: '导出成功',
+    exportFailed: '导出失败',
+    confirmDelete: '确认删除',
+    deleteConfirmContent: '确定要删除选中的 {count} 项吗？此操作无法撤销。',
+    cancel: '取消',
+    deleting: '删除中...',
+    deleteSuccess: '删除成功',
+    deleteFailed: '删除失败'
   },
   settings: {
     language: '语言',

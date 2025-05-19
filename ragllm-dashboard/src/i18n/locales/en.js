@@ -46,7 +46,22 @@ export default {
     viewDetails: 'View Details',
     success: 'Success',
     failure: 'Failure',
-    partialSuccess: 'Partial Success'
+    partialSuccess: 'Partial Success',
+    exportExcel: 'Export Excel',
+    exportPDF: 'Export PDF',
+    delete: 'Delete',
+    selected: '{count} items selected',
+    selectRowsToExport: 'Please select rows to export',
+    selectRowsToDelete: 'Please select rows to delete',
+    exporting: 'Exporting...',
+    exportSuccess: 'Export successful',
+    exportFailed: 'Export failed',
+    confirmDelete: 'Confirm Delete',
+    deleteConfirmContent: 'Are you sure you want to delete {count} selected items? This action cannot be undone.',
+    cancel: 'Cancel',
+    deleting: 'Deleting...',
+    deleteSuccess: 'Delete successful',
+    deleteFailed: 'Delete failed'
   },
   settings: {
     language: 'Language',
