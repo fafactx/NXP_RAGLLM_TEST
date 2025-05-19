@@ -109,7 +109,7 @@ check_nodejs() {
         log_error "Node.js is not installed! Please install Node.js before running this script."
         exit 1
     fi
-    
+
     log_info "Node.js version: $(node -v)"
     log_info "NPM version: $(npm -v)"
 }
@@ -118,12 +118,12 @@ check_nodejs() {
 check_port() {
     local port=$1
     local address=$2
-    
+
     # If no address is specified, use 0.0.0.0 (all addresses)
     if [ -z "$address" ]; then
         address="0.0.0.0"
     fi
-    
+
     # Check if port is in use
     if netstat -tuln | grep -q "$address:$port"; then
         return 0 # Port is in use
@@ -136,26 +136,26 @@ check_port() {
 kill_process_on_port() {
     local port=$1
     local address=$2
-    
+
     # If no address is specified, use 0.0.0.0 (all addresses)
     if [ -z "$address" ]; then
         address="0.0.0.0"
     fi
-    
+
     log_warning "Port $address:$port is in use, attempting to kill the process..."
-    
+
     # Find PID of process occupying the port
     local pid=$(netstat -tulnp | awk -v port="$PORT" '$4 ~ ":"port"$" {split($7,a,/\/); print a[1]}'
 )
-    
+
     if [ -z "$pid" ]; then
         log_error "Cannot find process occupying port $port!"
         return 1
     fi
-    
+
     # Kill the process
     kill -9 $pid 2>/dev/null
-    
+
     if [ $? -eq 0 ]; then
         log_success "Successfully killed process occupying port $port (PID: $pid)"
         return 0
@@ -168,7 +168,7 @@ kill_process_on_port() {
 # Check if dependencies are installed
 check_dependencies() {
     local dir=$1
-    
+
     if [ ! -d "$dir/node_modules" ]; then
         log_warning "Dependencies not installed, installing now..."
         cd "$dir" && npm install
@@ -185,17 +185,17 @@ check_dependencies() {
 # Start backend
 start_backend() {
     log_info "Starting backend service..."
-    
+
     # Check backend directory
     check_directory "$BASE_DIR"
-    
+
     # Check backend dependencies
     check_dependencies "$BASE_DIR"
-    
+
     # Check if backend port is in use
     if check_port $BACKEND_PORT $BACKEND_HOST; then
         log_warning "Backend port $BACKEND_HOST:$BACKEND_PORT is in use!"
-        
+
         # Ask user if they want to kill the process
         read -p "Kill the process occupying the port? (y/n): " answer
         if [[ "$answer" =~ ^[Yy]$ ]]; then
@@ -208,11 +208,11 @@ start_backend() {
             exit 1
         fi
     fi
-    
+
     # Start backend service
     cd "$BASE_DIR" && node backend-code.js &
     BACKEND_PID=$!
-    
+
     # Check if backend started successfully
     sleep 3
     if ps -p $BACKEND_PID > /dev/null; then
@@ -226,40 +226,80 @@ start_backend() {
 # Start frontend
 start_frontend() {
     log_info "Starting frontend service..."
-    
+
     # Check frontend directory
     check_directory "$FRONTEND_DIR"
-    
+
     # Check frontend dependencies
     check_dependencies "$FRONTEND_DIR"
-    
-    # Check if frontend port is in use
-    if check_port $FRONTEND_PORT $FRONTEND_HOST; then
-        log_warning "Frontend port $FRONTEND_HOST:$FRONTEND_PORT is in use!"
-        
-        # Ask user if they want to kill the process
-        read -p "Kill the process occupying the port? (y/n): " answer
-        if [[ "$answer" =~ ^[Yy]$ ]]; then
-            if ! kill_process_on_port $FRONTEND_PORT $FRONTEND_HOST; then
-                log_error "Cannot free port $FRONTEND_HOST:$FRONTEND_PORT, please manually close the process and try again."
-                exit 1
+
+    # Create a named pipe for capturing output
+    PIPE_FILE="/tmp/frontend_pipe_$$"
+    mkfifo "$PIPE_FILE"
+
+    # Start a background process to read from the pipe and capture the port
+    {
+        # Read from the pipe and look for the port
+        while read line; do
+            echo "$line" >> "$FRONTEND_DIR/frontend.log"
+
+            # Check if the line contains the network URL
+            if echo "$line" | grep -q "Network:"; then
+                # Extract the actual port
+                actual_port=$(echo "$line" | grep -o ":[0-9]\+" | grep -o "[0-9]\+")
+                if [ ! -z "$actual_port" ]; then
+                    # Save the actual port to a file so the main process can read it
+                    echo "$actual_port" > "/tmp/frontend_port_$$"
+                fi
             fi
-        else
-            log_error "Port $FRONTEND_HOST:$FRONTEND_PORT is in use, cannot start frontend service."
+        done < "$PIPE_FILE"
+
+        # Remove the pipe when done
+        rm -f "$PIPE_FILE"
+    } &
+    PIPE_READER_PID=$!
+
+    # Start frontend service and redirect output to the pipe
+    cd "$FRONTEND_DIR" && npm run dev > "$PIPE_FILE" 2>&1 &
+    FRONTEND_PID=$!
+
+    # Wait for Vite to start and detect the actual port
+    local max_wait=30
+    local waited=0
+
+    while [ $waited -lt $max_wait ]; do
+        # Check if the process is still running
+        if ! ps -p $FRONTEND_PID > /dev/null; then
+            log_error "Frontend service failed to start!"
+            kill $PIPE_READER_PID 2>/dev/null
+            rm -f "$PIPE_FILE" "/tmp/frontend_port_$$"
             exit 1
         fi
+
+        # Check if we've detected the port
+        if [ -f "/tmp/frontend_port_$$" ]; then
+            FRONTEND_PORT=$(cat "/tmp/frontend_port_$$")
+            rm -f "/tmp/frontend_port_$$"
+            log_info "Detected frontend running on port: $FRONTEND_PORT"
+            break
+        fi
+
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    # If we couldn't detect the port after max_wait, use the default
+    if [ $waited -eq $max_wait ]; then
+        log_warning "Could not detect the actual frontend port within $max_wait seconds, using default: $FRONTEND_PORT"
     fi
-    
-    # Start frontend service
-    cd "$FRONTEND_DIR" && npm run dev &
-    FRONTEND_PID=$!
-    
+
     # Check if frontend started successfully
-    sleep 5
     if ps -p $FRONTEND_PID > /dev/null; then
         log_success "Frontend service started, PID: $FRONTEND_PID"
     else
         log_error "Frontend service failed to start!"
+        kill $PIPE_READER_PID 2>/dev/null
+        rm -f "$PIPE_FILE" "/tmp/frontend_port_$$"
         exit 1
     fi
 }
@@ -275,19 +315,27 @@ show_access_info() {
 # Cleanup function
 cleanup() {
     log_info "Stopping services..."
-    
+
     # Stop frontend service
     if [ ! -z "$FRONTEND_PID" ]; then
         kill $FRONTEND_PID 2>/dev/null
         log_success "Frontend service stopped"
     fi
-    
+
+    # Stop pipe reader process if it exists
+    if [ ! -z "$PIPE_READER_PID" ]; then
+        kill $PIPE_READER_PID 2>/dev/null
+    fi
+
     # Stop backend service
     if [ ! -z "$BACKEND_PID" ]; then
         kill $BACKEND_PID 2>/dev/null
         log_success "Backend service stopped"
     fi
-    
+
+    # Clean up temporary files
+    rm -f "/tmp/frontend_pipe_$$" "/tmp/frontend_port_$$"
+
     log_success "All services stopped"
     exit 0
 }
@@ -302,7 +350,7 @@ parse_args() {
     FRONTEND_ONLY=false
     NO_CHECK=false
     FORCE_KILL=false
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -330,7 +378,7 @@ parse_args() {
         esac
         shift
     done
-    
+
     # If both backend-only and frontend-only are specified, show error
     if $BACKEND_ONLY && $FRONTEND_ONLY; then
         log_error "Cannot specify both --backend-only and --frontend-only"
@@ -344,27 +392,27 @@ main() {
     log_info "Starting RAGLLM Test Suite..."
 
     npm install
-    
+
     wait
     # Parse command line arguments
     parse_args "$@"
-    
+
     # Check Node.js
     check_nodejs
-    
+
     # Start backend if not frontend-only
     if ! $FRONTEND_ONLY; then
         start_backend
     fi
-    
+
     # Start frontend if not backend-only
     if ! $BACKEND_ONLY; then
         start_frontend
     fi
-    
+
     # Show access information
     show_access_info
-    
+
     # Keep script running
     wait
 }
