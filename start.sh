@@ -145,7 +145,8 @@ kill_process_on_port() {
     log_warning "Port $address:$port is in use, attempting to kill the process..."
     
     # Find PID of process occupying the port
-    local pid=$(lsof -i tcp:$port -t 2>/dev/null)
+    local pid=$(netstat -tulnp | awk -v port="$PORT" '$4 ~ ":"port"$" {split($7,a,/\/); print a[1]}'
+)
     
     if [ -z "$pid" ]; then
         log_error "Cannot find process occupying port $port!"
@@ -341,7 +342,10 @@ parse_args() {
 # Main function
 main() {
     log_info "Starting RAGLLM Test Suite..."
+
+    npm install
     
+    wait
     # Parse command line arguments
     parse_args "$@"
     
